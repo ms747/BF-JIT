@@ -5,16 +5,15 @@ macro_rules! libc_func {
     };
 }
 
+// Jit calling convention
+// r14 - program counter
+// r15 - memory
 pub struct Codegen {
     pub code: String,
     print_fn: extern "C" fn(u8) -> (),
     pc: &'static str,
     memory: &'static str,
 }
-
-// Jit calling convention
-// r14 - program counter
-// r15 - memory
 
 impl Codegen {
     pub fn new() -> Self {
@@ -23,6 +22,25 @@ impl Codegen {
             print_fn: unsafe { libc_func!(libc::putchar, extern "C" fn(u8) -> ()) },
             pc: "r14",
             memory: "r15",
+        }
+    }
+
+    pub fn alloc_rwx(size: usize) -> &'static mut [u8] {
+        extern "C" {
+            fn mmap(
+                addr: *mut u8,
+                length: usize,
+                prot: i32,
+                flags: i32,
+                fd: i32,
+                offset: usize,
+            ) -> *mut u8;
+        }
+
+        unsafe {
+            let ret = mmap(0 as *mut u8, size, 7, 34, -1, 0);
+            assert!(!ret.is_null());
+            std::slice::from_raw_parts_mut(ret, size)
         }
     }
 

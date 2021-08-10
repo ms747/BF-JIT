@@ -7,71 +7,102 @@ mod codegen;
 
 use crate::codegen::Codegen;
 
-fn alloc_rwx(size: usize) -> &'static mut [u8] {
-    extern "C" {
-        fn mmap(
-            addr: *mut u8,
-            length: usize,
-            prot: i32,
-            flags: i32,
-            fd: i32,
-            offset: usize,
-        ) -> *mut u8;
-    }
-
-    unsafe {
-        let ret = mmap(0 as *mut u8, size, 7, 34, -1, 0);
-        assert!(!ret.is_null());
-        std::slice::from_raw_parts_mut(ret, size)
-    }
+#[derive(Debug)]
+enum TokenType {
+    Next(usize),
+    Prev(usize),
+    Inc(usize),
+    Dec(usize),
+    Print,
+    Scan,
+    Jumpf(usize),
+    Jumpb(usize),
 }
 
 fn main() {
-    // BF memory
     let mut memory = [0u8; 512];
+    let args: String = std::env::args().skip(1).take(1).collect();
+    let data = std::fs::read_to_string(args).expect("USAGE: ./bf <program.bf>");
+    let mut tokens = vec![];
+    let mut stack = vec![];
 
+    let mut ptr = 0;
+    let mut instruction_index = 0;
+
+    while ptr < data.len() {
+        let ch = data.as_bytes()[ptr];
+        match ch {
+            b'+' => {
+                let mut count = 1;
+                while ch == data.as_bytes()[ptr + count] {
+                    count += 1;
+                }
+                ptr += count - 1;
+                tokens.push(TokenType::Inc(count));
+            }
+            b'-' => {
+                let mut count = 1;
+                while ch == data.as_bytes()[ptr + count] {
+                    count += 1;
+                }
+                ptr += count - 1;
+                tokens.push(TokenType::Dec(count));
+            }
+            b'>' => {
+                let mut count = 1;
+                while ch == data.as_bytes()[ptr + count] {
+                    count += 1;
+                }
+                ptr += count - 1;
+                tokens.push(TokenType::Next(count));
+            }
+            b'<' => {
+                let mut count = 1;
+                while ch == data.as_bytes()[ptr + count] {
+                    count += 1;
+                }
+                ptr += count - 1;
+                tokens.push(TokenType::Prev(count));
+            }
+            b'.' => {
+                tokens.push(TokenType::Print);
+            }
+            b',' => {
+                tokens.push(TokenType::Scan);
+            }
+            b'[' => {
+                stack.push(instruction_index);
+                tokens.push(TokenType::Jumpf(instruction_index));
+                instruction_index += 1;
+            }
+            b']' => {
+                let jump_index = stack.pop().unwrap();
+                tokens.push(TokenType::Jumpb(jump_index));
+            }
+            _ => {}
+        }
+        ptr += 1;
+    }
+
+    // Codegen
     let mut codegen = Codegen::new();
 
     codegen.setup();
-    codegen.inc(14);
-    codegen.jumpf(1);
-    codegen.next(1);
-    codegen.inc(5);
-    codegen.prev(1);
-    codegen.dec(1);
-    codegen.jumpb(1);
-    codegen.next(1);
-    codegen.print();
-    codegen.cleanup();
 
-    // println!("{}", codegen.code);
-    // codegen.setup();
-    // codegen.inc(72);
-    // codegen.print();
-    // codegen.dec(3);
-    // codegen.print();
-    // codegen.inc(7);
-    // codegen.print();
-    // codegen.print();
-    // codegen.inc(3);
-    // codegen.print();
-    // codegen.dec(35);
-    // codegen.print();
-    // codegen.dec(12);
-    // codegen.print();
-    // codegen.inc(55);
-    // codegen.print();
-    // codegen.dec(8);
-    // codegen.print();
-    // codegen.inc(3);
-    // codegen.print();
-    // codegen.dec(6);
-    // codegen.print();
-    // codegen.dec(8);
-    // codegen.print();
-    // codegen.dec(58);
-    // codegen.print();
-    // codegen.cleanup();
+    for token in tokens {
+        match token {
+            TokenType::Next(offset) => codegen.next(offset),
+            TokenType::Prev(offset) => codegen.prev(offset),
+            TokenType::Inc(offset) => codegen.inc(offset),
+            TokenType::Dec(offset) => codegen.dec(offset),
+            TokenType::Jumpf(offset) => codegen.jumpf(offset),
+            TokenType::Jumpb(offset) => codegen.jumpb(offset),
+            TokenType::Print => codegen.print(),
+            TokenType::Scan => todo!(),
+        }
+    }
+
+    codegen.cleanup();
 
     std::fs::write("./test.s", codegen.code).unwrap();
 
@@ -84,7 +115,7 @@ fn main() {
 
     let bytecode = std::fs::read("./test").expect("Failed to read file");
 
-    let jit_mem = alloc_rwx(16 * 1024 * 1024);
+    let jit_mem = Codegen::alloc_rwx(16 * 1024 * 1024);
 
     unsafe {
         libc::memcpy(
