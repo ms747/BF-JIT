@@ -68,6 +68,26 @@ impl Codegen {
         );
     }
 
+    pub fn jumpf(&mut self, offset: usize) {
+        self.code += &format!(".start_{}:\n", offset);
+        self.code += &format!(
+            "cmp byte [{memory} + {pc}], 0x0\n",
+            memory = self.memory,
+            pc = self.pc
+        );
+        self.code += &format!("je .end_{}\n", offset);
+    }
+
+    pub fn jumpb(&mut self, offset: usize) {
+        self.code += &format!(
+            "cmp byte [{memory} + {pc}], 0x0\n",
+            memory = self.memory,
+            pc = self.pc
+        );
+        self.code += &format!("jne .start_{}\n", offset);
+        self.code += &format!(".end_{}:\n", offset);
+    }
+
     pub fn print(&mut self) {
         self.code += &format!(
             "movzx edi, byte [{memory} + {pc}]\n",
